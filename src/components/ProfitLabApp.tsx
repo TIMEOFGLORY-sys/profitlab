@@ -1,5 +1,6 @@
 "use client";
 import { ChangeEvent, useMemo, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Page = "home" | "products" | "profit" | "pricing" | "campaign" | "analysis" | "settings";
 
@@ -23,6 +24,7 @@ export default function ProfitLabApp(){
   const [result,setResult]=useState<CalcResult|null>(null); const [calcMsg,setCalcMsg]=useState("");
   const [campaign,setCampaign]=useState({discount:15,voucher:8,affiliate:15});
   const [importPreview,setImportPreview]=useState<any>(null); const [importName,setImportName]=useState("");
+  const [logoutBusy,setLogoutBusy]=useState(false);
 
   const meta:Record<Page,[string,string]> = {
     home:["Beranda","Ringkasan kondisi profit dan tindakan prioritas."],products:["Produk","Kelola etalase, variasi, kategori, dan modal/HPP."],
@@ -43,6 +45,18 @@ export default function ProfitLabApp(){
     try{const r=await fetch("/api/import/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})}); setImportPreview(await r.json());}catch{setImportPreview({error:"Preview gagal"});}
   }
 
+  async function logout(){
+    if(logoutBusy) return;
+    setLogoutBusy(true);
+    try{
+      const supabase=createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+      window.location.href="/login";
+    }finally{
+      setLogoutBusy(false);
+    }
+  }
+
   const campaignRisk=useMemo(()=>Math.min(99,Math.round(campaign.discount*1.6+campaign.voucher*1.1+campaign.affiliate*1.5)),[campaign]);
   const bad=Math.round(30+campaignRisk*1.35); const warn=Math.round(90+campaignRisk*1.5); const safe=1482-bad-warn;
 
@@ -51,7 +65,7 @@ export default function ProfitLabApp(){
       <div className="brand-lockup side"><span className="brand-mark">◆</span><div><strong>ProfitLab</strong><small>Know your Real Profit</small></div></div>
       <nav>{nav.map(n=><button key={n.id} className={page===n.id?"active":""} onClick={()=>setPage(n.id)}><span>{n.icon}</span>{n.label}</button>)}</nav>
       <div className="sidebar-spacer"/><div className="business-card"><small>Business</small><strong>Sporty Brand</strong><span>▾</span></div>
-      <div className="user-card"><span className="avatar">KA</span><div><strong>Kevin Aditama</strong><small>Owner</small></div><span>⋮</span></div>
+      <div className="user-card"><span className="avatar">KA</span><div><strong>Kevin Aditama</strong><small>Owner</small></div><button className="small-button" onClick={logout} disabled={logoutBusy}>{logoutBusy?"Keluar…":"Keluar"}</button></div>
     </aside>
     <main className="main-area">
       <header className="topbar"><div><h1>{meta[page][0]}</h1><p>{meta[page][1]}</p></div><div className="top-actions"><button className="ghost">15 Agu 2026</button><button className="icon-btn">♢</button></div></header>
