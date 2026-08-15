@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Page = "home" | "products" | "profit" | "pricing" | "campaign" | "analysis" | "settings";
@@ -25,6 +25,35 @@ export default function ProfitLabApp(){
   const [campaign,setCampaign]=useState({discount:15,voucher:8,affiliate:15});
   const [importPreview,setImportPreview]=useState<any>(null); const [importName,setImportName]=useState("");
   const [logoutBusy,setLogoutBusy]=useState(false);
+  const [marketplace,setMarketplace]=useState<"shopee"|"tiktok">("shopee");
+  const [sellerType,setSellerType]=useState("regular");
+  const [categories,setCategories]=useState<Array<{id:string;name:string;path?:string|null}>>([]);
+  const [categoryId,setCategoryId]=useState("");
+  const [categoryMsg,setCategoryMsg]=useState("");
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function loadCategories(){
+      setCategoryMsg("Memuat kategori…");
+      setCategoryId("");
+      try{
+        const r=await fetch(`/api/reference/categories?marketplace=${marketplace}`,{cache:"no-store"});
+        const data=await r.json();
+        if(!r.ok) throw new Error(data.error||"Gagal memuat kategori");
+        if(cancelled) return;
+        const rows=Array.isArray(data.categories)?data.categories:[];
+        setCategories(rows);
+        if(rows.length){ setCategoryId(rows[0].id); setCategoryMsg(""); }
+        else setCategoryMsg("Belum ada kategori aktif untuk marketplace ini.");
+      }catch(e){
+        if(cancelled) return;
+        setCategories([]);
+        setCategoryMsg(e instanceof Error?e.message:"Gagal memuat kategori");
+      }
+    }
+    loadCategories();
+    return()=>{cancelled=true};
+  },[marketplace]);
 
   const meta:Record<Page,[string,string]> = {
     home:["Beranda","Ringkasan kondisi profit dan tindakan prioritas."],products:["Produk","Kelola etalase, variasi, kategori, dan modal/HPP."],
@@ -34,7 +63,8 @@ export default function ProfitLabApp(){
 
   async function calculate(customPrice=price){
     setCalcMsg("Menghitung…");
-    const body={input:{marketplace:"shopee",sellerType:"regular",categoryId:"demo-category",calculationDate:new Date().toISOString().slice(0,10),unitPrice:customPrice,quantity:1,hppPerUnit:hpp,sellerDiscount:{type:"none"},sellerVoucher:{type:"percentage",rate:voucher/100},affiliateRate:affiliate/100,packagingPerOrder:pack,operationalPerOrder:0,ads:{type:"none"},otherCostPerOrder:0,targetMargin:target/100}};
+    if(!categoryId){ setCalcMsg("Pilih kategori marketplace terlebih dahulu."); return; }
+    const body={input:{marketplace,sellerType,categoryId,calculationDate:new Date().toISOString().slice(0,10),unitPrice:customPrice,quantity:1,hppPerUnit:hpp,sellerDiscount:{type:"none"},sellerVoucher:{type:"percentage",rate:voucher/100},affiliateRate:affiliate/100,packagingPerOrder:pack,operationalPerOrder:0,ads:{type:"none"},otherCostPerOrder:0,targetMargin:target/100}};
     try{
       const r=await fetch("/api/calculate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}); const data=await r.json();
       if(!r.ok) throw new Error(data.error||"Gagal menghitung"); setResult(data.result); setCalcMsg(data.mode==="demo"?"Mode demo — aktifkan production rules untuk go-live.":"Rules produksi terverifikasi digunakan.");
@@ -72,7 +102,7 @@ export default function ProfitLabApp(){
       <div className="content">
         {page==="home"&&<Home onGo={setPage}/>} 
         {page==="products"&&<Products importPreview={importPreview} importName={importName} fileChange={fileChange}/>} 
-        {page==="profit"&&<ProfitForm price={price} setPrice={setPrice} hpp={hpp} setHpp={setHpp} affiliate={affiliate} setAffiliate={setAffiliate} voucher={voucher} setVoucher={setVoucher} pack={pack} setPack={setPack} target={target} setTarget={setTarget} result={result} calculate={calculate} msg={calcMsg}/>} 
+        {page==="profit"&&<ProfitForm price={price} setPrice={setPrice} hpp={hpp} setHpp={setHpp} affiliate={affiliate} setAffiliate={setAffiliate} voucher={voucher} setVoucher={setVoucher} pack={pack} setPack={setPack} target={target} setTarget={setTarget} result={result} calculate={calculate} msg={calcMsg} marketplace={marketplace} setMarketplace={setMarketplace} sellerType={sellerType} setSellerType={setSellerType} categories={categories} categoryId={categoryId} setCategoryId={setCategoryId} categoryMsg={categoryMsg}/>} 
         {page==="pricing"&&<Pricing hpp={hpp} setHpp={setHpp} target={target} setTarget={setTarget} result={result} calculate={calculate}/>} 
         {page==="campaign"&&<Campaign values={campaign} setValues={setCampaign} risk={campaignRisk} safe={safe} warn={warn} bad={bad}/>} 
         {page==="analysis"&&<Analysis/>} {page==="settings"&&<Settings/>}
@@ -100,7 +130,7 @@ function Products({importPreview,importName,fileChange}:{importPreview:any,impor
   <section className="panel table-panel"><div className="panel-head"><div><h2>Produk & Variasi</h2><p>1.482 variasi dari 245 etalase</p></div><div className="filters"><button className="ghost">Semua Brand ▾</button><button className="ghost">Semua Marketplace ▾</button></div></div><div className="table-scroll"><table><thead><tr><th>Produk / Variasi</th><th>Brand</th><th>Marketplace</th><th>Kategori</th><th>Harga</th><th>HPP</th><th>Margin</th><th>Status</th></tr></thead><tbody>{[["Running X / Black 44","NORKHA","Shopee","Sepatu Olahraga",129900,72000,"4,2%","Rugi"],["Sneaker Glow / White 42","JOYSPORT","Shopee","Sneakers",149900,78000,"5,1%","Rugi"],["Runner Pro / Blue 41","FVNSPORT","TikTok","Sports Shoes",139900,69000,"18,4%","Perhatian"],["Daily Comfort / Black 43","NORKHA","Shopee","Casual Shoes",119900,52000,"24,8%","Sehat"]].map(r=><tr key={r[0] as string}><td><strong>{r[0]}</strong><small>SKU PL-{String(r[0]).slice(0,3).toUpperCase()}-01</small></td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{rp(r[4] as number)}</td><td>{rp(r[5] as number)}</td><td>{r[6]}</td><td><span className={`pill ${r[7]==="Sehat"?"green":r[7]==="Rugi"?"red":"amber"}`}>{r[7]}</span></td></tr>)}</tbody></table></div></section>
 </>}
 
-function ProfitForm(p:any){return <div className="two-col"><section className="panel form-panel"><div className="eyebrow">KALKULATOR PRODUK</div><h2>Cek Profit</h2><p>Field inti dibuat minimal. Detail tambahan tersedia bila dibutuhkan.</p><div className="form-grid"><label>Marketplace<select><option>Shopee</option><option>TikTok Shop</option></select></label><label>Kategori<select><option>Sepatu Olahraga</option><option>Sneakers</option></select></label><label>Harga Jual<input type="number" value={p.price} onChange={(e:any)=>p.setPrice(+e.target.value)}/></label><label>Modal / HPP<input type="number" value={p.hpp} onChange={(e:any)=>p.setHpp(+e.target.value)}/></label><div className="split-fields"><label>Affiliate %<input type="number" value={p.affiliate} onChange={(e:any)=>p.setAffiliate(+e.target.value)}/></label><label>Voucher Seller %<input type="number" value={p.voucher} onChange={(e:any)=>p.setVoucher(+e.target.value)}/></label></div><div className="split-fields"><label>Packaging<input type="number" value={p.pack} onChange={(e:any)=>p.setPack(+e.target.value)}/></label><label>Target Margin %<input type="number" value={p.target} onChange={(e:any)=>p.setTarget(+e.target.value)}/></label></div><button className="button primary" onClick={()=>p.calculate()}>Hitung Profit</button>{p.msg&&<div className="inline-note">{p.msg}</div>}</div></section><section className="panel result-panel">{!p.result?<div className="empty-state"><span>◎</span><h2>Hasil akan muncul di sini</h2><p>ProfitLab akan menampilkan profit, margin, harga aman, dan sumber biaya.</p></div>:<Result result={p.result}/>}</section></div>}
+function ProfitForm(p:any){return <div className="two-col"><section className="panel form-panel"><div className="eyebrow">KALKULATOR PRODUK</div><h2>Cek Profit</h2><p>Field inti dibuat minimal. Detail tambahan tersedia bila dibutuhkan.</p><div className="form-grid"><label>Marketplace<select value={p.marketplace} onChange={(e:any)=>p.setMarketplace(e.target.value)}><option value="shopee">Shopee</option><option value="tiktok">TikTok Shop</option></select></label><label>Tipe Seller<select value={p.sellerType} onChange={(e:any)=>p.setSellerType(e.target.value)}><option value="regular">Regular</option><option value="non_star">Non-Star</option><option value="star">Star</option><option value="mall">Mall</option><option value="unknown">Belum diketahui</option></select></label><label>Kategori<select value={p.categoryId} onChange={(e:any)=>p.setCategoryId(e.target.value)} disabled={!p.categories.length}><option value="">Pilih kategori</option>{p.categories.map((c:any)=><option key={c.id} value={c.id}>{c.path||c.name}</option>)}</select>{p.categoryMsg&&<small>{p.categoryMsg}</small>}</label><label>Harga Jual<input type="number" value={p.price} onChange={(e:any)=>p.setPrice(+e.target.value)}/></label><label>Modal / HPP<input type="number" value={p.hpp} onChange={(e:any)=>p.setHpp(+e.target.value)}/></label><div className="split-fields"><label>Affiliate %<input type="number" value={p.affiliate} onChange={(e:any)=>p.setAffiliate(+e.target.value)}/></label><label>Voucher Seller %<input type="number" value={p.voucher} onChange={(e:any)=>p.setVoucher(+e.target.value)}/></label></div><div className="split-fields"><label>Packaging<input type="number" value={p.pack} onChange={(e:any)=>p.setPack(+e.target.value)}/></label><label>Target Margin %<input type="number" value={p.target} onChange={(e:any)=>p.setTarget(+e.target.value)}/></label></div><button className="button primary" onClick={()=>p.calculate()}>Hitung Profit</button>{p.msg&&<div className="inline-note">{p.msg}</div>}</div></section><section className="panel result-panel">{!p.result?<div className="empty-state"><span>◎</span><h2>Hasil akan muncul di sini</h2><p>ProfitLab akan menampilkan profit, margin, harga aman, dan sumber biaya.</p></div>:<Result result={p.result}/>}</section></div>}
 function Result({result}:{result:CalcResult}){return <><div className="eyebrow">ESTIMASI KEUNTUNGAN</div><div className="profit-number">{rp(result.estimatedProfit)}</div><div className="result-status"><span className={`pill ${result.margin>=.2?"green":"amber"}`}>Margin {pct(result.margin)}</span><span>Kelengkapan {result.completeness}%</span></div><div className="result-cards"><div><small>Harga minimal</small><strong>{rp(result.breakEvenPrice)}</strong></div><div><small>Harga target</small><strong>{rp(result.recommendedPrice)}</strong></div><div><small>Affiliate aman</small><strong>{pct(result.safeAffiliateRate)}</strong></div></div><h3>Bagaimana angka ini dihitung?</h3><div className="calc-lines">{result.lines.filter(l=>Math.abs(l.amount)>0).map(l=><div key={l.code}><span><b>{l.label}</b><small>{l.source}</small></span><strong className={l.amount<0?"negative":""}>{l.amount<0?"−":""}{rp(Math.abs(l.amount))}</strong></div>)}</div><div className="rule-foot">Rule version: <b>{result.ruleVersion}</b></div>{result.ruleWarnings.map(w=><div className="inline-warning" key={w}>{w}</div>)}</>}
 
 function Pricing({hpp,setHpp,target,setTarget,result,calculate}:any){return <div className="two-col"><section className="panel form-panel"><div className="eyebrow">SAFE PRICING</div><h2>Cari Harga Jual</h2><p>Masukkan modal dan target margin. ProfitLab mencari harga yang memenuhi target.</p><div className="form-grid"><label>Modal / HPP<input type="number" value={hpp} onChange={(e:any)=>setHpp(+e.target.value)}/></label><label>Target Margin<input type="number" value={target} onChange={(e:any)=>setTarget(+e.target.value)}/></label><button className="button primary" onClick={()=>calculate(150000)}>Hitung Harga Aman</button></div></section><section className="panel result-panel"><div className="eyebrow">REKOMENDASI</div><div className="price-recommend">{result?rp(result.recommendedPrice):"Rp—"}</div><p>Harga yang disarankan untuk mempertahankan target margin {target}% berdasarkan struktur biaya yang aktif.</p>{result&&<div className="result-cards"><div><small>Jangan jual di bawah</small><strong>{rp(result.breakEvenPrice)}</strong></div><div><small>Affiliate maksimum</small><strong>{pct(result.safeAffiliateRate)}</strong></div><div><small>Rule</small><strong>{result.ruleVersion}</strong></div></div>}</section></div>}

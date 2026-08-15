@@ -34,12 +34,32 @@ export async function POST(request: Request) {
         .or(`effective_to.is.null,effective_to.gte.${input.calculationDate}`);
       if (error) throw error;
       const rules = resolveRules((data || []).map(mapDbRule), context);
+      if (!input.categoryId) {
+        return NextResponse.json({
+          error: "Pilih kategori marketplace terlebih dahulu agar biaya dapat dihitung dengan aman.",
+          code: "CATEGORY_REQUIRED"
+        }, { status: 422 });
+      }
       if (!rules.length) {
         return NextResponse.json({
           error: "Belum ada rule marketplace terverifikasi untuk kombinasi marketplace, tipe seller, kategori, dan tanggal ini.",
           code: "RULE_NOT_VERIFIED"
         }, { status: 422 });
       }
+
+      // Production safety gate: generic order fees alone are not sufficient to claim a complete marketplace profit.
+      // A verified category-specific core commission/admin rule must exist for the selected category.
+      const coreFeeTypes = new Set(["admin_fee", "commission", "platform_commission", "category_commission"]);
+      const hasVerifiedCategoryCoreFee = rules.some(
+        (rule) => rule.categoryId === input.categoryId && coreFeeTypes.has(rule.feeType)
+      );
+      if (!hasVerifiedCategoryCoreFee) {
+        return NextResponse.json({
+          error: "Kategori ini belum memiliki rule biaya utama yang terverifikasi. ProfitLab sengaja tidak menampilkan estimasi profit agar tidak memberi angka yang menyesatkan.",
+          code: "CATEGORY_CORE_FEE_NOT_VERIFIED"
+        }, { status: 422 });
+      }
+
       return NextResponse.json({ result: calculateProfit(input, rules), mode: "production" });
     }
 
